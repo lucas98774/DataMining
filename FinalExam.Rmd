@@ -1,0 +1,1046 @@
+---
+title: 'STAT 764 Final Exam'
+author: "Lucas Spellman"
+date: "12/17/2020"
+output:
+  word_document: default
+fontsize: 12pt
+---
+
+```{r echo=FALSE}
+# leave alone, this block for grading
+pts <- NULL
+pts.poss <- NULL
+display.grades <- TRUE
+scoreFunction <- function(prb,earned,possible){
+  pts[prb] <<- earned
+  pts.poss[prb] <<- possible
+  if (display.grades){
+      print( paste('Score for',prb,':',earned,'/',possible))
+  }
+}
+```
+
+This is an exam.  Do your own work and do not collaborate with others.  Use any materials that you like, but no discussion please.  You may ask questions of the instructor.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(ggplot2); library(tidyverse); library(caret); library(factoextra);   # general packages
+
+library(lsa); library(tm); library(sna); library(igraph) # specific packages
+
+source('examTools.R')
+library(dplyr)  # best practice to load this last (avoids dplyr::)
+```
+
+
+## Problem 1  
+
+Huawei Technologies Co.Ltd. is a Chinese multinational networking, telecommunications equipment, and services company headquartered in Shenzhen, Guangdong. Huawei R & D uses social network analysis tools and techniques to enhance their business positions.
+
+For this problem, a small subset of a directed social network that was collected by crawling Huawei Technologies social media platform on Facebook. 
+
+The data file **Facebook_Data.csv** is an adjacency matrix that can be found in this exam assignment in Canvas.
+
+### Part 1a 
+
+Load the data set and convert it to a directed social network graph object.  Some steps in handling the adjacency matrix have been provided for you.
+
+Is this a connected network?
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 1a -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+fb <- read.csv('data/Facebook_Data.csv')
+rownames(fb) <- fb$X
+fb$X <- NULL
+
+fb_graph <- igraph::graph_from_adjacency_matrix(as.matrix(fb), mode='directed')
+
+cat('Is this a connected graph:', is.connected(fb_graph))
+```
+
+
+
+
+```{r echo=FALSE}
+# leave alone, this block for grading
+scoreFunction("1a",3,3)
+```
+
+---
+
+### Part 1b 
+
+i. How many links are possible for this network?
+
+ii. How many links are there currently in this network?
+
+iii. Compute the network density.  
+
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 1b -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+# i
+num_nodes <- length(V(fb_graph))  # note this is a directed graph
+cat('Since there are', num_nodes, 'in this graph, there are', num_nodes*(num_nodes-1), 'possible links\n')
+
+# ii
+cat('There are', length(E(fb_graph)), 'edges (links) in this graph\n')
+
+# iii
+cat('The density for this graph is:', edge_density(fb_graph))
+
+```
+
+
+
+
+```{r echo=FALSE}
+# leave alone, this block for grading
+scoreFunction("1b",3,3)
+```
+
+---
+
+### Part 1c
+
+Provide tables and bar graphs of the in-degree and out-degree distributions for both incoming and outgoing edges.
+
+Write a sentence or two to compare the two distributions. What does this result mean?
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 1c -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+in_dist <- degree_distribution(fb_graph, mode='in')
+out_dist <- degree_distribution(fb_graph, mode='out')
+
+df1 <- data.frame(Out=out_dist, Incoming=in_dist, Degree=0:(length(out_dist)-1))
+
+df1 %>% 
+  knitr::kable()  # FIXME: why are these the exact same???
+
+df1 %>% 
+  pivot_longer(cols=-Degree) %>% 
+  ggplot(aes(x=factor(Degree), y=value)) +
+  geom_bar(stat='identity', aes(fill=name)) +
+  facet_wrap(~name, scales='free_y') +
+  labs(fill='Connection Type', x = 'Degree', y='Relative Frequency')
+
+```
+
+It seems that the distributions of the incoming and outgoing connections in this graph are very similar. This graph may be symmetric (nontechnical version here) in that there are very few connections between nodes that don't go both ways. However, this may just be coincidental as well and since we are aggregating information, we do not know this for sure and overall this network may just have similar outgoing connections as incoming connections.
+
+
+```{r echo=FALSE}
+# leave alone, this block for grading
+scoreFunction("1c",4,4)
+```
+
+---
+
+### Part 1d
+    
+Find the person with the highest eigen centrality.  Report and  interpret the eigen centrality and its meaning in the context of the problem.  
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 1d -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+library(keyplayer)
+
+fb %>% 
+  rownames_to_column(var='obs') %>% 
+  dplyr::select(obs) %>% 
+  mutate(centrality = eigen_centrality(fb_graph, directed=T)$vector) %>% 
+  arrange(desc(centrality)) %>% 
+  slice(1:5) %>% 
+  knitr::kable()
+```
+
+As seen above, Adela Babst is the most central in this network. This means that this person and their connections are largest in the network hence this person is the most central. 
+
+
+
+```{r echo=FALSE}
+# leave alone, this block for grading
+scoreFunction("1d",2,2)
+```
+
+---
+
+### Part 1e
+    
+Report the names of the top 3 key players based on minimum closeness and total degree.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 1e -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+top_few <- kpset(fb, size=3, type='closeness', method='min', cmode='total')  # FIXME: make sure these parameters are right and this is not asking for more.
+
+cat('Names of top players based on minimum closeness and total degree:\n', rownames(fb)[top_few$keyplayers])
+```
+
+
+
+
+```{r echo=FALSE}
+# leave alone, this block for grading
+scoreFunction("1e",2,2)
+```
+
+---
+
+### Part 1f
+    
+Using the shortest path with the highest inverse log-weighted similarity as criteria, predict the top 10 most likely links to form next in this network (consider each direction as a separate link).
+
+Display the names and similarity scores for each.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 1f -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+path_df <- compute_path_lengths(fb_graph)
+sim_df <-  compute_similarity(fb_graph, method='invlogweighted', these_names=colnames(fb), top_n=160)
+
+cat('Predictions for next 10 links (Both directions considered):')
+
+dplyr::full_join(path_df, sim_df, by=c('name', 'name2')) %>% 
+  filter(!is.na(PL), !is.na(invlogweighted)) %>% 
+  arrange(desc(invlogweighted)) %>%   # FIXME: check to make sure this is the right direction
+  slice(1:20) 
+
+```
+
+
+
+```{r echo=FALSE}
+# leave alone, this block for grading
+scoreFunction("1f",4,4)
+```
+
+----
+
+### Part 1g 
+    
+Compute and interpret the betweenness and closeness measures for Saif Ali (i.e. Saif.Ali).
+
+Provide the summary statistics for both betweenness and closeness for the entire network and discuss approximately where Saif Ali falls in each distribution. 
+
+Also provide a visualization to show where Saif Ali falls in each distribution and write a brief paragraph about what you find.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 1g -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+this_node <- which(rownames(fb) == 'Saif Ali')  # this person is the 50th entry
+
+between_ness <- betweenness(fb_graph, v=this_node)
+close_ness <- closeness(fb_graph, v=this_node)
+
+summary_df <- data.frame(Close = closeness(fb_graph), Bet=betweenness(fb_graph)) 
+
+summary(summary_df)
+
+summary_df %>% 
+  ggplot(., aes(x=Close)) +
+  geom_histogram(fill='dodgerblue3', alpha=.8) + 
+  labs(x = 'Closeness', subtitle='Gold Line Saif Ali') +
+  geom_vline(aes(xintercept=close_ness), color = 'gold', size=1) +
+  geom_text(aes(x=close_ness, y=5, label=round(close_ness, 4))) 
+
+summary_df %>% 
+  ggplot(., aes(x=Bet)) +
+  geom_histogram(fill='coral', alpha=.8) + 
+  labs(x = 'Betweeness', subtitle='Green Line Saif Ali') +
+  geom_vline(aes(xintercept=between_ness), color = 'lawngreen', size=1) +
+  geom_text(aes(x=between_ness, y=5, label=round(between_ness, 1))) +
+  theme_minimal()
+
+```
+
+The summary statistics and plots are provided above. It appears that Saif Ali is average to slightly above average in both betweenness and closeness. Closeness seems to be about normally distributed and Saif seems to be right near the middle of the bell but he could be on the far side of the bell. Betweenness seems to be right skewed, and although Saif appears to be above the median, he could be at or below the average due to this skew. 
+
+
+
+```{r echo=FALSE}
+# leave alone, this block for grading
+scoreFunction("1g",4,4)
+```
+
+---
+
+### Part 1h 
+    
+How many nodes are there in the degree 1 egocentric network for Saif Ali?
+
+How many nodes are there in the degree 2 egocentric network for Saif Ali?
+
+Display the degree 2 egocentric network for Saif Ali. 
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 1h -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+ego1 <- make_ego_graph(fb_graph, order = 1, nodes=this_node, mode='all')
+ego2 <- make_ego_graph(fb_graph, order=2, nodes=this_node, mode='all')
+
+plot(ego1[[1]], vertex.label.dist = 3, edge.arrow.size=.5)
+plot(ego2[[1]], vertex.label.dist = 3, edge.arrow.size=.5)
+
+```
+
+
+##### Number of nodes in the degree 1 egocentric network for Saif Ali:
+
+6 nodes including Saif Ali
+
+##### Number of nodes in the degree 2 egocentric network for Saif Ali:
+
+23 nodes including Saif Ali 
+
+
+
+
+```{r echo=FALSE}
+# leave alone, this block for grading
+scoreFunction("1h",3,3)
+```
+
+---
+
+### Part 1i
+    
+i. Is your analysis of this social network supervised learning or unsupervised learning?  Explain.
+
+ii. Is the social network given in this problem structured data or unstructured data?  Explain.
+
+iii.  Describe the differences between an adjacency matrix and a real rating matrix.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 1i -|-|-|-|-|-|-|-|-|-|-|-
+
+##### i. Is your analysis of this social network supervised learning or unsupervised learning?  Explain.
+
+Social network analysis is unsupervised learning as this looks to gain insight into the structure of data and does not contain explicit labels or a response. This is similar to clustering where there is not response but structure of the data is under exploration.
+
+##### ii. Is the social network given in this problem structured data or unstructured data?  Explain.
+
+In this problem the data was structured data as it was already formatted in a csv file which contained the adjacency matrix. In practice, this is often collected and constructed from the unstructured form which is usually transactions of some kind.
+
+##### iii.  Describe the differences between an adjacency matrix and a real rating matrix.
+
+An adjacency matrix contains information on connections between users, giving information on who knows who and in turn structure into a (social) network. The columns and the rows both contain the users or the items of interest whereas in a real ratings matrix, the rows and columns are not the same items. In a real ratings matrix (association rules and collaborative filtering), the data contains information on customers and items. Hence the relationship or structure under evaluation here is between two different groups not completely intrinsic as in an adjacency matrix. 
+
+
+```{r echo=FALSE}
+# leave alone, this block for grading
+scoreFunction("1i",3,3)
+```
+
+---
+
+## Problem 2
+
+The dataset **acq** is a corpus in the **"tm" package** holds 50 exemplary news articles with additional meta information from the Reuters-21578 data set. All documents belong to the topic "acq" dealing with corporate acquisitions.
+
+Use **acq** to do the following.
+
+### Part 2a 
+
+Load the "acq" corpus after loading the "tm" package and convert it to a term-document matrix.
+
+Report how many terms are in the 50 documents as well as the sparsity as a percent.
+
+Also find and state the most frequently used term (before doing any tokenization or reduction of text).
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 2a -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+data('acq')  # load data
+
+dt_mat <- TermDocumentMatrix(acq)
+# dt_mat
+findFreqTerms(dt_mat, lowfreq=10)
+```
+
+##### Number of terms in the 50 documents:
+
+2103
+
+##### Sparsity (as a percent):
+
+96%
+
+##### The most frequently used term is:
+
+the
+
+
+```{r echo=FALSE}
+# leave alone, this block for grading
+scoreFunction("2a",4,4)
+```
+
+---
+
+### Part 2b
+
+Perform tokenization on the corpus by removing whitespace, punctuation, and numbers.  Also remove the stopwords (from R's "english" list) and further reduce the text by stemming.
+
+Create another term-document matrix and report how many terms are in the 50 documents as well as the sparsity as a percent. 
+
+Also find and state the most frequently used term.
+
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 2b -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+dt_mat <- tm_map(acq, stripWhitespace) %>%  # strip white spaces
+  tm_map(., removePunctuation) %>%  # remove punc
+  tm_map(., removeNumbers) %>% 
+  tm_map(., removeWords, stopwords("english")) %>%   # remove common words 
+  tm_map(., stemDocument) %>% 
+  TermDocumentMatrix()
+
+# dt_mat
+findFreqTerms(dt_mat, lowfreq=150)
+
+# which(dt_mat$i == max(dt_mat$i))
+```
+
+##### Number of terms in the 50 documents:
+
+1222
+
+##### Sparsity (as a percent):
+
+95%
+
+##### The most frequently used term is:
+
+said
+
+
+
+```{r echo=FALSE}
+# leave alone, this block for grading
+scoreFunction("2b",2,2)
+```
+
+---
+
+### Part 2c
+    
+Convert the reduced term-document matrix to a term-frequency inverse document frequency matrix and use latent semantic analysis to map multiple terms to a set of 10 concepts.
+
+Convert the resulting LSAspace object to a data frame.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 2c -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+tfidf <- weightTfIdf(dt_mat)  # convert to tfidf
+new_concepts <- as.data.frame(lsa(tfidf, dims=10)$dk)  # run lsa
+```
+
+
+
+
+```{r echo=FALSE}
+# leave alone, this block for grading
+scoreFunction("2c",3,3)
+```
+
+---
+
+### Part 2d
+
+Use agglomerative hierarchical clustering with Ward's method (use method ="ward.D2", not "ward.D") to cluster the documents into 2 groups.  Plot the associate dendrogram along with the rectangles that show the clusters.
+
+How many documents fall into each cluster?
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 2d -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+# FIXME: check if preprocessing is needed here
+cluster_fit <- new_concepts %>% 
+  eclust(.,FUNcluster='hclust', k=2, graph=T, hc_method='ward.D2')
+
+fviz_dend(cluster_fit) +
+  geom_rect(aes(xmin=0, xmax=50, ymin=0, ymax=1.4), alpha=.1, color = 'purple')
+
+data.frame(cluster = cluster_fit$cluster) %>% 
+  group_by(cluster) %>% 
+  tally()
+
+```
+
+As seen above, there is a large imbalance in cluster size here as one cluster is comprised of a lone document and the rest fall into another cluster.
+
+
+
+
+```{r echo=FALSE}
+# leave alone, this block for grading
+scoreFunction("2d",3,3)
+```
+
+---
+
+### Part 2e
+
+Examine the smaller of the two clusters by identifying the documents in that cluster and listing all of the terms that occur at least 5 times among those documents.
+
+Print the document names (identified by numbers) as well as the terms that occur with a frequency of 5 or more.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 2e -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+these_ones <- new_concepts %>% 
+  rownames_to_column(var='index') %>% 
+  mutate(cluster = cluster_fit$cluster) %>% 
+  filter(cluster==2)
+
+cat('Document Number:', these_ones$index, '\n')
+cat('Terms with a frequency with 5 or more:', findFreqTerms(dt_mat[as.numeric(these_ones$index), ],  lowfreq=5))
+```
+
+
+```{r echo=FALSE}
+# leave alone, this block for grading
+scoreFunction("2e",3,3)
+```
+
+---
+
+## Problem 3
+
+The data file **acceptable_car.csv** can be found in this exam assignment in Canvas.  
+
+The data set contains 1727 cases measured on the following variables.
+
+buying - buying price
+
+maint - price of the maintenance
+
+doors - number of doors
+
+persons - capacity in terms of persons to carry
+
+lug_boot - the size of luggage boot
+
+safety - estimated safety of the car
+
+car - car acceptability
+
+The goal is to use the variables in the data frame to classify acceptability of the car. 
+
+### Part 3a
+
+List all of the data mining/statistical learning procedures from this course that would be appropriate for the purpose of this study. 
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 3a -|-|-|-|-|-|-|-|-|-|-|-
+
+After looking into the variables provided in the dataset, all of the variables are either nominal or ordinal. Since the desired response is binary (acceptable or not) any classification technique that can utilize categorical variables is applicable here. Specificall, (from this class):
+
+- KNN 
+- Naive Bayes
+- Classification Trees 
+- Logistic Regression 
+- Neural Network
+- LDA 
+
+
+
+```{r echo=FALSE}
+# leave alone, this block for grading
+scoreFunction("3a",3,3)
+```
+
+---
+
+### Part 3b
+
+Load the data and randomly partition it, using 60% of it to create a training set and the remaining 40% as a validation set.
+
+Use the random number seed provided.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 3b -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+set.seed(111)
+
+car <- read.csv('data/acceptable_car.csv', stringsAsFactors = T)
+
+car <- car %>% 
+  mutate(response=if_else(car == 'unacc', 0, 1)) %>% 
+  dplyr::select(-car)
+
+car$buying <- factor(car$buying, levels=c('low', 'med', 'high', 'vhigh'), ordered = T)
+car$maint <- factor(car$maint, levels=c('low', 'med', 'high', 'vhigh'), ordered = T)
+car$doors <- factor(car$doors, levels=c('2', '3', '4', '5more'), ordered = T)
+car$persons <- factor(car$persons, levels=c('2', '4', 'more'), ordered=T)
+car$lug_boot <- factor(car$lug_boot, levels=c('small', 'med', 'big'), ordered=T)
+car$safety <- factor(car$safety, levels=c('low', 'med', 'high'), ordered=T)
+car$response <- factor(car$response, levels=c('0', '1'), labels=c('Unacceptable', 'Acceptable'))
+
+train_ind <- createDataPartition(car$response, p=.6, list=F)
+training <- car[train_ind, ]
+val <- car[-train_ind, ]
+```
+
+
+
+```{r echo=FALSE}
+# leave alone, this block for grading
+scoreFunction("3b",2,2)
+```
+
+---
+
+### Part 3c
+
+Use a boosted classification tree to classify cars as acceptable.  Cars are considered to be acceptable if they are rated as "acc", "good", or "vgood".
+
+Using a cutoff probability of 0.5, produce car acceptability classifications on the validation set.  
+
+Display the confusion matrix, accuracy, sensitivity, and specificity for the predictions on the validation set. Write a brief description of your results.
+
+Use the random number seed provided.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 3c -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+set.seed(35)
+
+# FIXME: check what preprocessing is needed for trees (I think none)
+
+boosted <- adabag::boosting(response~., training, mfinal=50)  # reduce mfinal in order to save time
+
+tmp = adabag::predict.boosting(boosted, val)$prob[,2]  # might need to switch this
+
+boost_prob <- make_predictor(function(model, new_data) adabag::predict.boosting(model, new_data)$prob[,2])  # FIXME: might need to change the column at the end
+
+make_roc(boosted, val, boost_prob, response='response', method='boosted_tree', positive='Acceptable', fit_thresh = F)
+```
+
+As seen in the metrics and plot above, the boosted tree fits very well as there is only 2 misclassifications with a fairly large validation set. This model has very high predictive power and seems to identify both classes well (sensitivity and specificity).
+
+
+```{r echo=FALSE}
+# leave alone, this block for grading
+scoreFunction("3c",5,5)
+```
+
+---
+
+### Part 3d
+
+Use the k-NN algorithm to classify cars as acceptable.  Again, cars are considered to be acceptable if they are rated as "acc", "good", or "vgood".
+
+Using a cutoff probability of 0.5, produce car acceptability classifications on the validation set.  
+
+Display the confusion matrix, accuracy, sensitivity, and specificity for the predictions on the validation set. Write a brief description of your results.
+
+Also, state the value of k you used and explain why you used it.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 3d -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+# perform preprocessing for knn (need n variables for categorical variables)
+
+dummier <- dummyVars(~.-response, data=training, sep='_', fullRank = F)  # force full rank
+# FIXME: why is the sep argument ignored???
+
+training_dummied <- as.data.frame(predict(dummier, training)) %>% 
+  mutate(response=training$response)
+
+val_dummied <- as.data.frame(predict(dummier, val)) %>% 
+  mutate(response=val$response)
+
+# fit using caret in order to use cv for selecting k
+
+simple_control <- trainControl(method='cv',number=5, savePredictions='final', classProbs=T, 
+                               summaryFunction=twoClassSummary, allowParallel=T)
+
+this_knn <- train(response~.,data=training, method='knn', trControl=simple_control, tuneGrid=expand.grid(k=1:20))
+plot(this_knn)  # use 4 neighbors
+
+knn_prob <- make_predictor(function(model, new_data){
+  as.data.frame(predict(model, new_data %>% dplyr::select(-response)))$Acceptable
+})
+
+make_roc(this_knn$finalModel, val_dummied, knn_prob, response='response', method='KNN', fit_thresh=F)
+```
+
+As seen in the metrics above, the knn model has high predictive power and performs very well. 
+
+
+
+```{r echo=FALSE}
+# leave alone, this block for grading
+scoreFunction("3d",6,6)
+```
+
+---
+
+### Part 3e
+
+Which classification method performed better on the validation set?
+
+As seen in the questions above, the boosted tree performed better on the validation set.
+
+Use that classification method to classify a car with the following values as acceptable or unacceptable.
+
+buying - high
+
+maint - high
+
+doors - 4
+
+persons - more
+
+lug_boot - med
+
+safety - high
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 3e -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+new_point <- data.frame(buying='high', maint='high', doors='4', persons='more', lug_boot='med', safety='high', 
+                        stringsAsFactors = T)
+new_point$buying <- factor(new_point$buying, levels=c('low', 'med', 'high', 'vhigh'), ordered = T)
+new_point$maint <- factor(new_point$maint, levels=c('low', 'med', 'high', 'vhigh'), ordered = T)
+new_point$doors <- factor(new_point$doors, levels=c('2', '3', '4', '5more'), ordered = T)
+new_point$persons <- factor(new_point$persons, levels=c('2', '4', 'more'), ordered=T)
+new_point$lug_boot <- factor(new_point$lug_boot, levels=c('small', 'med', 'big'), ordered=T)
+new_point$safety <- factor(new_point$safety, levels=c('low', 'med', 'high'), ordered=T)
+
+if_else(boost_prob(boosted, new_point, type='prob')> .5, 'Acceptable', 'Unacceptable')
+```
+
+
+
+
+```{r echo=FALSE}
+# leave alone, this block for grading
+scoreFunction("3e",6,6)
+```
+
+---
+
+## Problem 4
+
+The data set **Concrete_Data.csv** can be found in this exam assignment in Canvas.  
+
+The data set contains 1030 cases measured on the following variables.  
+
+Cement - component 1, kg  
+
+Blast Furnace Slag - component 2, kg 
+
+Fly Ash - component 3, kg 
+
+Water - component 4, kg
+
+Superplasticizer - component 5, kg
+
+Coarse Aggregate - component 6, kg
+
+Fine Aggregate - component 7, kg
+
+Age - in days  
+
+Compressive strength - MPa 
+
+The goal is to predict the compressive strength of the concrete mixture.
+
+### Part 4a
+
+Load the data.
+
+Provide summary statistics for each variable and matrix of plots using ggpairs (you may have to zoom the view to see the details, but they should all fit).
+
+Briefly describe the important aspects.  Do you recommend any data transformations?  If so, why?  What transformations do you recommend and for which variables?
+
+Perform the transformations in this step if you are going to use any. 
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 4a -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+concrete <- read.csv('data/Concrete_Data.csv')
+
+# sapply(concrete, FUN=function(x) length(unique(x)))  # all seem to be numeric...
+
+summary(concrete)
+GGally::ggpairs(concrete)  # make matrix of plots to analyze
+
+right_skewed <- c('Age', 'BlastFurnaceSlag', 'FlyAsh', 'Superplasticizer') 
+
+tmp <- concrete %>% 
+  mutate(across(right_skewed, function(x)log(x+1e-4), .names='log_{.col}')) %>%  # add small noise to get rid of infty
+  mutate(across(right_skewed, sqrt, .names='sqrt_{.col}')) %>% 
+  mutate(across(right_skewed, function(x) x^(1/3), .names='cube_{.col}')) 
+  
+
+dplyr::select(tmp, contains('_')) %>% 
+  pivot_longer(cols=everything()) %>% 
+  separate(col=name, into=c('transformation', 'variable'), '_') %>% 
+  ggplot(aes(x=value)) +
+  geom_density(fill='lawngreen', alpha=.4) +
+  facet_grid(variable~transformation, scales='free')
+
+pivot_longer(concrete, cols=right_skewed) %>% 
+  ggplot(aes(x=value)) +
+  geom_density(fill='firebrick', alpha=.2) +
+  facet_wrap(~name, scales='free')
+
+concrete <- concrete %>% 
+  mutate(Age= Age^(1/3))  # cube root age
+# apply(dplyr::select(concrete, right_skewed), MARGIN=2, FUN=rcompanion::transformTukey)
+```
+
+Looking at the matrix of plots, there does not seem to be any highly correlated variables so multicollinearity does not seem to be an issue. Looking at the distribution plots, Age, BlastFurnanceSlag, FlyAsh and Superplasticizer all seem to be right skewed and applying a transformation may lead to improved performance for modeling. Typical transformations for right skewed data are square roots, cube root or log transformations.
+
+After looking through the transformations mentioned above, a cube root was applied to Age while the other variables were left unchanged. The other variables were left unchanged since these distributions were close to bimodal and the transformations appeared to highlight this. 
+
+
+
+```{r echo=FALSE}
+# leave alone, this block for grading
+scoreFunction("4a",5,5)
+```
+
+---
+
+### Part 4b
+
+Randomly partition the data, using 60% for a training set and 40% for a validation set.
+
+using the training set, perform a principal components analysis (PCA) on the potential predictor variables (i.e. all but CompressiveStrength).  
+
+Should these variables be normalized first?  Explain why or why not and do the PCA with your recommendation of normalized or non-normalized variables.
+
+Since PCA looks to maximize variation, having variables with drastically different sizes leads to the largest variable having a very large impact on the fit. Hence scaling the variables so that the variance is comparable allows for better comparison of true variation between the variables.  
+
+How many principal components do you recommend retaining?  Why? 
+
+Number of components to retain is subjective but some useful tools are: screeplots, kaiser's rule and percent variation retained. In this case 5 dimensions were kept as the eigenvalue for the fifth dimension was just below kaiser's rule, but allowed for ~90% of the variation.
+
+Is this a good scenario to use PCA?  Explain.
+
+It ultimately depends on the purpose of the model being fit, but in this case, some of the major benefits of linear regression is interpretablilty and this is majorly hindered by using PCA. Hence, this is not a good use of PCA. PCA should be applied when there are highly correlated variables and feature selection (dimensionality reduction) is desired. 
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 4b -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+train_ind <- createDataPartition(concrete$CompressiveStrength, list=F, p=.6)
+training <- concrete[train_ind, ]
+val <- concrete[-train_ind, ]
+
+concrete_standardizer <- make_standardizer(dplyr::select(training, -CompressiveStrength), method=c('scale', 'center'))
+
+training_std <- concrete_standardizer$standardize(training)
+val_std <- concrete_standardizer$standardize(val)
+
+pca_fit <- training_std %>% 
+  dplyr::select(-CompressiveStrength) %>% 
+  princomp() 
+
+fviz_screeplot(pca_fit)
+fviz_screeplot(pca_fit,choice='eigenvalue') +
+  geom_hline(aes(yintercept=1.0), color='red')
+
+predict_pca <- function(model, this_data, response, dim_to_keep=5){
+  this_response <- ensym(response)
+  pca_scores <- predict(model, this_data)
+  
+  new_df <- as.data.frame(pca_scores)[,1:dim_to_keep]
+  new_df <- new_df %>% 
+    mutate(!!this_response:=this_data[, response])
+  return(new_df)
+}
+
+training_pca <- predict_pca(pca_fit, training_std, 'CompressiveStrength')  # fit pca
+val_pca <- predict_pca(pca_fit, val_std, 'CompressiveStrength') 
+```
+
+Retain maybe 5 or 6.  It isn't a good scenario since 8 predictors isn't all that much.  It would be better used if there were many more predictor variables. (selected 5)
+
+
+```{r echo=FALSE}
+# leave alone, this block for grading
+scoreFunction("4b",6,6)
+```
+
+---
+
+### Part 4c
+
+Use the first four principal components to construct a first order linear regression model to predict the compressive strength of the concrete. Use the training data.  (hint: create a new data frame to hold the components)
+
+Display the RMSE of the model on the training set.
+
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 4c -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+this_lm <- lm(CompressiveStrength ~.-Comp.5, data=training_pca)  # fit lm
+
+cat('RMSE on Training set:', 
+    ModelMetrics::rmse(actual=training_pca$CompressiveStrength, predicted=predict(this_lm, training_pca)), '\n')
+
+cat('RMSE on Validation set:', 
+    ModelMetrics::rmse(actual=val_pca$CompressiveStrength, predicted=predict(this_lm, val_pca)))
+```
+
+
+
+
+```{r echo=FALSE}
+# leave alone, this block for grading
+scoreFunction("4c",5,5)
+```
+
+---
+
+### Part 4d
+
+Using the training set, fit a neural network to the data (NOT the principal components, but to the actual variables - either raw or what you transformed in part 4a) to predict compressive strength.
+
+Use 3 hidden layers with 2 nodes each. 
+
+Display the RMSE of the model on the training set.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 4d -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+# Note: NN requires the variables to be between 0 and 1, need to restandardize using range method
+
+concrete_range <- make_standardizer(training, method='range')  # Note need to include the response variable too!
+
+training_range <- concrete_range$standardize(training)
+val_range <- concrete_range$standardize(val)
+
+this_nn <- neuralnet::neuralnet(CompressiveStrength ~., data=training_range, hidden=c(2,2,2), linear.output = T)
+
+unrange_response <- function(preds){
+  preds * (80.20-3.32) + 3.32
+}
+
+cat('RMSE on Training set:', 
+    ModelMetrics::rmse(actual=training$CompressiveStrength, predicted=unrange_response(predict(this_nn, training_range)),
+                       '\n'))
+
+cat('RMSE on Validation set:', 
+    ModelMetrics::rmse(actual=val$CompressiveStrength, predicted=unrange_response(predict(this_nn, val_range))))
+```
+
+
+
+
+```{r echo=FALSE}
+# leave alone, this block for grading
+scoreFunction("4d",5,5)
+```
+
+---
+
+### Part 4e
+    
+Using the training set, fit a random forest to the data (NOT the principal components, but to the actual variables - either raw or what you transformed in part 4a) to predict compressive strength.
+
+Display the RMSE of the model on the training set.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 4e -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+rf <- randomForest::randomForest(CompressiveStrength ~., data=training_std, ntree=500)
+
+
+cat('RMSE on Training set:', 
+    ModelMetrics::rmse(actual=training$CompressiveStrength, predicted=predict(rf, training_std), '\n'))
+
+cat('RMSE on Validation set:', 
+    ModelMetrics::rmse(actual=val$CompressiveStrength, predicted=predict(rf, val_std)))
+
+```
+
+
+
+
+
+```{r echo=FALSE}
+# leave alone, this block for grading
+scoreFunction("4e",5,5)
+```
+
+---
+
+### Part 4f
+
+Use an ensemble of the linear regression from the first four principal components, the neural network, and the random forest on the validation data set to predict compressive strength.
+
+Create a table of the RMSE for each method (ensemble, linear regression, neural net, and random forest).  
+
+Which method has the best RMSE?
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 4f -|-|-|-|-|-|-|-|-|-|-|-
+
+
+```{r}
+simple_average <- data.frame(LM=predict(this_lm, val_pca), NN=unrange_response(predict(this_nn, val_range)),
+                             RF=predict(rf, val_std)) %>% 
+  rownames_to_column(var='index') %>% 
+  mutate(index=as.character(index)) %>% 
+  pivot_longer(cols=-index) %>% 
+  group_by(index) %>% 
+  mutate(ensemble=mean(value)) %>% 
+  pivot_wider(id_cols=c(index, ensemble)) %>% 
+  ungroup() %>% 
+  dplyr::select(-index)
+
+cat('RMSE table (validation set):')
+simple_average %>% 
+  summarize(across(everything(), .fns=function(x)ModelMetrics::rmse(val$CompressiveStrength, x), .names="{.col}")) %>% 
+  knitr::kable()
+```
+
+As seen in the table above, the random forest has the best validation accuracy.
+
+
+```{r echo=FALSE}
+# leave alone, this block for grading
+scoreFunction("4f",5,5)
+```
+
+---
+
+### Part 4g
+
+Is there much evidence of overfitting for the linear regression from the first four principal components, the neural network, or the random forest models to predict compressive strength?  Explain.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 4g -|-|-|-|-|-|-|-|-|-|-|-
+
+
+As seen in the parts above, there is evidence of overfitting for the random forest as the validation error is significantly higher than the training error (about double). For the linear regression model as well as the neural network, the training error was very close to the validation error which indicates that these models are generalizing appropriately and does not give evidence of overfitting.
+
+
+
+```{r echo=FALSE}
+# leave alone, this block for grading
+scoreFunction("4g",4,4)
+```
+
+---
+
+ALL DONE!!!  YOU DID IT!!! 
+
+Have a wonderful break!
+
+
+```{r echo=FALSE}
+# leave along, this block for grading
+if (display.grades){
+  pts.tot <- sum(pts)
+  pts.poss.tot <- sum(pts.poss)
+  print(paste('Total points earned',pts.tot,'out of',pts.poss.tot))
+}
