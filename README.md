@@ -13,6 +13,6 @@ This class revolved around learning and implementing common machine learning and
 
 ## Details
 
-In addition to implmenting common data science techniques in this class, I begain looking into nonstandard evaluation and closures in r in order to create more abstract tools to expedite performing analyses
+In addition to implmenting common data science techniques in this class, I begain looking into nonstandard evaluation and closures in R in order to create more abstract tools to expedite performing analyses (see examTools.R)
 
 
